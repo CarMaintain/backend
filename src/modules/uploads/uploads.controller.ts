@@ -30,7 +30,7 @@ export class UploadsController {
     schema: {
       type: 'object',
       properties: {
-        category: { type: 'string', enum: ['documents', 'maintenance'] },
+        category: { type: 'string', enum: ['documents', 'maintenance', 'cars'] },
         file: { type: 'string', format: 'binary' },
       },
       required: ['file'],

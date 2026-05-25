@@ -40,6 +40,64 @@ export class UploadsService {
       throw new BadRequestException(`Photo exceeds the ${maxSizeMb}MB limit.`);
     }
 
+    return this.uploadPhotoBuffer(userId, dto, file);
+  }
+
+  async uploadPhotoFromDataUrl(
+    userId: string,
+    dto: UploadPhotoDto,
+    input: { dataUrl: string; fileName?: string | null },
+  ) {
+    const match = input.dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!match) {
+      throw new BadRequestException('Unsupported photo payload.');
+    }
+
+    const [, mimetype, encoded] = match;
+    const buffer = Buffer.from(encoded, 'base64');
+    return this.uploadPhotoBuffer(userId, dto, {
+      buffer,
+      mimetype,
+      originalname: input.fileName ?? `photo.${mimetype.split('/')[1] ?? 'jpg'}`,
+      size: buffer.byteLength,
+    });
+  }
+
+  async uploadPhotoFromRemoteUrl(
+    userId: string,
+    dto: UploadPhotoDto,
+    input: { url: string; fileName?: string | null },
+  ) {
+    const response = await fetch(input.url);
+    if (!response.ok) {
+      throw new BadRequestException('Unable to fetch the provided photo URL.');
+    }
+
+    const contentType = response.headers.get('content-type') ?? 'image/jpeg';
+    if (!ALLOWED_IMAGE_MIME_TYPES.has(contentType)) {
+      throw new BadRequestException('Only image URLs are supported.');
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return this.uploadPhotoBuffer(userId, dto, {
+      buffer,
+      mimetype: contentType,
+      originalname: input.fileName ?? 'photo',
+      size: buffer.byteLength,
+    });
+  }
+
+  isSupabasePublicUrl(url: string) {
+    const supabaseUrl = this.configService.get<string>('supabase.url');
+    const bucket = this.configService.get<string>('supabase.storageBucket', 'maintaincar-uploads');
+    if (!supabaseUrl) {
+      return false;
+    }
+    return url.startsWith(`${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${bucket}/`);
+  }
+
+  private async uploadPhotoBuffer(userId: string, dto: UploadPhotoDto, file: UploadableFile) {
     const supabaseUrl = this.configService.get<string>('supabase.url');
     const serviceRoleKey = this.configService.get<string>('supabase.serviceRoleKey');
     const bucket = this.configService.get<string>('supabase.storageBucket', 'maintaincar-uploads');

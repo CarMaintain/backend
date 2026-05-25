@@ -4,6 +4,7 @@ import { DocumentsService } from '../documents/documents.service';
 import { MaintenanceService } from '../maintenance/maintenance.service';
 import { MileageSourceDto } from '../mileage/dto/mileage.enums';
 import { MileageService } from '../mileage/mileage.service';
+import { UploadsService } from '../uploads/uploads.service';
 import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarMileageDto } from './dto/update-car-mileage.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
@@ -15,6 +16,7 @@ export class CarsService {
     private readonly documentsService: DocumentsService,
     private readonly maintenanceService: MaintenanceService,
     private readonly mileageService: MileageService,
+    private readonly uploadsService: UploadsService,
   ) {}
 
   async findAll(userId: string) {
@@ -72,6 +74,7 @@ export class CarsService {
         year: dto.year,
         fuelType: dto.fuelType,
         gearbox: dto.gearbox,
+        photoUrl: dto.photoUrl === undefined ? undefined : await this.resolveCarPhotoUrl(userId, dto.photoUrl),
       },
     });
     return { data: car, message: 'Modifications enregistrees.' };
@@ -106,5 +109,31 @@ export class CarsService {
       throw new NotFoundException('Vehicule introuvable.');
     }
     return car;
+  }
+
+  private async resolveCarPhotoUrl(userId: string, photoUrl: string | null) {
+    if (photoUrl === null) {
+      return null;
+    }
+    if (this.uploadsService.isSupabasePublicUrl(photoUrl)) {
+      return photoUrl;
+    }
+    if (photoUrl.startsWith('data:image/')) {
+      const upload = await this.uploadsService.uploadPhotoFromDataUrl(
+        userId,
+        { category: 'cars' },
+        { dataUrl: photoUrl, fileName: 'car-photo' },
+      );
+      return upload.data.url;
+    }
+    if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+      const upload = await this.uploadsService.uploadPhotoFromRemoteUrl(
+        userId,
+        { category: 'cars' },
+        { url: photoUrl, fileName: 'car-photo' },
+      );
+      return upload.data.url;
+    }
+    throw new BadRequestException('Car photo must be a Supabase URL, a remote image URL, or a data URL.');
   }
 }
