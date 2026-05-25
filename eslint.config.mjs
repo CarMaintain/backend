@@ -17,9 +17,13 @@ export default [
         console: 'readonly',
         process: 'readonly',
         Buffer: 'readonly',
+        fetch: 'readonly',
+        global: 'readonly',
         describe: 'readonly',
         it: 'readonly',
+        afterEach: 'readonly',
         expect: 'readonly',
+        jest: 'readonly',
       },
     },
     plugins: {

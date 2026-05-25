@@ -9,9 +9,13 @@ describe('CarsService', () => {
       };
     };
     uploadsService?: {
-      isSupabasePublicUrl?: jest.Mock;
-      uploadPhotoFromDataUrl?: jest.Mock;
-      uploadPhotoFromRemoteUrl?: jest.Mock;
+      uploadPhoto?: jest.Mock;
+    };
+    maintenanceService?: {
+      recalculateItemsForCar?: jest.Mock;
+    };
+    mileageService?: {
+      createForOwnedCar?: jest.Mock;
     };
   }) {
     const prisma = {
@@ -23,28 +27,59 @@ describe('CarsService', () => {
     };
 
     const uploadsService = {
-      isSupabasePublicUrl: jest.fn().mockReturnValue(false),
-      uploadPhotoFromDataUrl: jest.fn().mockResolvedValue({ data: { url: 'https://example.supabase.co/storage/v1/object/public/maintaincar-uploads/cars/user_1/photo.jpg' } }),
-      uploadPhotoFromRemoteUrl: jest.fn().mockResolvedValue({ data: { url: 'https://example.supabase.co/storage/v1/object/public/maintaincar-uploads/cars/user_1/photo.jpg' } }),
+      uploadPhoto: jest.fn().mockResolvedValue({
+        data: { url: 'https://example.supabase.co/storage/v1/object/public/maintaincar-uploads/cars/user_1/photo.jpg' },
+      }),
       ...overrides?.uploadsService,
+    };
+    const maintenanceService = {
+      recalculateItemsForCar: jest.fn().mockResolvedValue(undefined),
+      ...overrides?.maintenanceService,
+    };
+    const mileageService = {
+      createForOwnedCar: jest.fn().mockResolvedValue({ data: { mileage: 85000 } }),
+      ...overrides?.mileageService,
     };
 
     return {
       prisma,
       uploadsService,
-      service: new CarsService(prisma as never, {} as never, {} as never, {} as never, uploadsService as never),
+      maintenanceService,
+      mileageService,
+      service: new CarsService(
+        prisma as never,
+        {} as never,
+        maintenanceService as never,
+        mileageService as never,
+        uploadsService as never,
+      ),
     };
   }
 
-  it('persists an existing Supabase car photo URL without re-uploading it', async () => {
-    const { service, prisma, uploadsService } = makeService({
-      uploadsService: { isSupabasePublicUrl: jest.fn().mockReturnValue(true) },
-    });
+  it('uploads a photoFile to Supabase before saving the car', async () => {
+    const { service, prisma, uploadsService } = makeService();
 
-    await service.update('user_1', 'car_1', { photoUrl: 'https://example.supabase.co/storage/v1/object/public/maintaincar-uploads/cars/user_1/photo.jpg' });
+    await service.update(
+      'user_1',
+      'car_1',
+      {},
+      {
+        buffer: Buffer.from('image-bytes'),
+        mimetype: 'image/jpeg',
+        originalname: 'car.jpg',
+        size: 1024,
+      },
+    );
 
-    expect(uploadsService.uploadPhotoFromDataUrl).not.toHaveBeenCalled();
-    expect(uploadsService.uploadPhotoFromRemoteUrl).not.toHaveBeenCalled();
+    expect(uploadsService.uploadPhoto).toHaveBeenCalledWith(
+      'user_1',
+      { category: 'cars' },
+      expect.objectContaining({
+        mimetype: 'image/jpeg',
+        originalname: 'car.jpg',
+        size: 1024,
+      }),
+    );
     expect(prisma.car.update).toHaveBeenCalledWith({
       where: { id: 'car_1' },
       data: expect.objectContaining({
@@ -53,22 +88,28 @@ describe('CarsService', () => {
     });
   });
 
-  it('uploads a data URL car photo to Supabase before saving it', async () => {
-    const { service, prisma, uploadsService } = makeService();
+  it('updates mileage and other fields in the same patch request', async () => {
+    const { service, prisma, mileageService, maintenanceService } = makeService();
 
     await service.update('user_1', 'car_1', {
-      photoUrl: 'data:image/png;base64,aGVsbG8=',
+      brand: 'BMW',
+      currentMileage: 85000,
     });
 
-    expect(uploadsService.uploadPhotoFromDataUrl).toHaveBeenCalledWith(
+    expect(mileageService.createForOwnedCar).toHaveBeenCalledWith(
       'user_1',
-      { category: 'cars' },
-      { dataUrl: 'data:image/png;base64,aGVsbG8=', fileName: 'car-photo' },
+      'car_1',
+      expect.objectContaining({
+        mileage: 85000,
+        source: 'manual',
+      }),
     );
+    expect(maintenanceService.recalculateItemsForCar).toHaveBeenCalledWith('car_1');
     expect(prisma.car.update).toHaveBeenCalledWith({
       where: { id: 'car_1' },
       data: expect.objectContaining({
-        photoUrl: 'https://example.supabase.co/storage/v1/object/public/maintaincar-uploads/cars/user_1/photo.jpg',
+        brand: 'BMW',
+        currentMileage: 85000,
       }),
     });
   });

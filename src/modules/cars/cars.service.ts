@@ -9,6 +9,13 @@ import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarMileageDto } from './dto/update-car-mileage.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
 
+type UploadedPhotoFile = {
+  buffer: Buffer;
+  mimetype: string;
+  originalname: string;
+  size: number;
+};
+
 @Injectable()
 export class CarsService {
   constructor(
@@ -52,21 +59,29 @@ export class CarsService {
   }
 
   async findOne(userId: string, carId: string) {
-    const car = await this.getOwnedCar(userId, carId);
-    return { data: car };
+    const ownedCar = await this.getOwnedCar(userId, carId);
+    return { data: ownedCar };
   }
 
-  async update(userId: string, carId: string, dto: UpdateCarDto) {
-    await this.getOwnedCar(userId, carId);
+  async update(userId: string, carId: string, dto: UpdateCarDto, photoFile?: UploadedPhotoFile) {
+    const existingCar = await this.getOwnedCar(userId, carId);
 
     if (dto.currentMileage !== undefined) {
-      return this.updateMileage(userId, carId, {
-        mileage: dto.currentMileage,
-        date: new Date().toISOString(),
-      });
+      if (dto.currentMileage < existingCar.currentMileage) {
+        throw new BadRequestException('Le kilometrage ne peut pas etre baisse silencieusement.');
+      }
+
+      if (dto.currentMileage > existingCar.currentMileage) {
+        await this.mileageService.createForOwnedCar(userId, carId, {
+          mileage: dto.currentMileage,
+          date: new Date().toISOString(),
+          source: MileageSourceDto.manual,
+        });
+        await this.maintenanceService.recalculateItemsForCar(carId);
+      }
     }
 
-    const car = await this.prisma.car.update({
+    const updatedCar = await this.prisma.car.update({
       where: { id: carId },
       data: {
         brand: dto.brand,
@@ -74,10 +89,11 @@ export class CarsService {
         year: dto.year,
         fuelType: dto.fuelType,
         gearbox: dto.gearbox,
-        photoUrl: dto.photoUrl === undefined ? undefined : await this.resolveCarPhotoUrl(userId, dto.photoUrl),
+        currentMileage: dto.currentMileage,
+        photoUrl: photoFile ? await this.uploadCarPhoto(userId, photoFile) : undefined,
       },
     });
-    return { data: car, message: 'Modifications enregistrees.' };
+    return { data: updatedCar, message: 'Modifications enregistrees.' };
   }
 
   async remove(userId: string, carId: string) {
@@ -111,29 +127,8 @@ export class CarsService {
     return car;
   }
 
-  private async resolveCarPhotoUrl(userId: string, photoUrl: string | null) {
-    if (photoUrl === null) {
-      return null;
-    }
-    if (this.uploadsService.isSupabasePublicUrl(photoUrl)) {
-      return photoUrl;
-    }
-    if (photoUrl.startsWith('data:image/')) {
-      const upload = await this.uploadsService.uploadPhotoFromDataUrl(
-        userId,
-        { category: 'cars' },
-        { dataUrl: photoUrl, fileName: 'car-photo' },
-      );
-      return upload.data.url;
-    }
-    if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
-      const upload = await this.uploadsService.uploadPhotoFromRemoteUrl(
-        userId,
-        { category: 'cars' },
-        { url: photoUrl, fileName: 'car-photo' },
-      );
-      return upload.data.url;
-    }
-    throw new BadRequestException('Car photo must be a Supabase URL, a remote image URL, or a data URL.');
+  private async uploadCarPhoto(userId: string, photoFile: UploadedPhotoFile) {
+    const upload = await this.uploadsService.uploadPhoto(userId, { category: 'cars' }, photoFile);
+    return upload.data.url;
   }
 }

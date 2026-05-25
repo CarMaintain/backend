@@ -1,5 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
@@ -7,6 +9,8 @@ import { CarsService } from './cars.service';
 import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarMileageDto } from './dto/update-car-mileage.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
+
+const DEFAULT_MAX_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024;
 
 @ApiTags('cars')
 @ApiBearerAuth()
@@ -31,8 +35,39 @@ export class CarsController {
   }
 
   @Patch(':id')
-  update(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: UpdateCarDto) {
-    return this.carsService.update(user.id, id, dto);
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        brand: { type: 'string' },
+        model: { type: 'string' },
+        year: { type: 'number' },
+        currentMileage: { type: 'number' },
+        fuelType: { type: 'string', enum: ['diesel', 'essence', 'hybrid', 'electric'] },
+        gearbox: { type: 'string', enum: ['manual', 'automatic'] },
+        photoFile: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('photoFile', {
+      storage: memoryStorage(),
+      limits: { fileSize: DEFAULT_MAX_UPLOAD_SIZE_BYTES },
+    }),
+  )
+  update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateCarDto,
+    @UploadedFile() photoFile?: {
+      buffer: Buffer;
+      mimetype: string;
+      originalname: string;
+      size: number;
+    },
+  ) {
+    return this.carsService.update(user.id, id, dto, photoFile);
   }
 
   @Delete(':id')
