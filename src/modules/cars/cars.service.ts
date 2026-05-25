@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DocumentsService } from '../documents/documents.service';
 import { MaintenanceService } from '../maintenance/maintenance.service';
@@ -16,6 +17,20 @@ type UploadedPhotoFile = {
   size: number;
 };
 
+const carResponseSelect = {
+  id: true,
+  userId: true,
+  brand: true,
+  model: true,
+  year: true,
+  currentMileage: true,
+  fuelType: true,
+  gearbox: true,
+  photoUrl: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.CarSelect;
+
 @Injectable()
 export class CarsService {
   constructor(
@@ -29,6 +44,7 @@ export class CarsService {
   async findAll(userId: string) {
     const cars = await this.prisma.car.findMany({
       where: { userId },
+      select: carResponseSelect,
       orderBy: { createdAt: 'desc' },
     });
     return { data: cars };
@@ -45,6 +61,7 @@ export class CarsService {
         fuelType: dto.fuelType,
         gearbox: dto.gearbox,
       },
+      select: carResponseSelect,
     });
 
     await this.documentsService.createDefaults(car.id);
@@ -92,6 +109,7 @@ export class CarsService {
         currentMileage: dto.currentMileage,
         photoUrl: photoFile ? await this.uploadCarPhoto(userId, photoFile) : undefined,
       },
+      select: carResponseSelect,
     });
     return { data: updatedCar, message: 'Modifications enregistrees.' };
   }
@@ -120,6 +138,7 @@ export class CarsService {
   async getOwnedCar(userId: string, carId: string) {
     const car = await this.prisma.car.findFirst({
       where: { id: carId, userId },
+      select: carResponseSelect,
     });
     if (!car) {
       throw new NotFoundException('Vehicule introuvable.');

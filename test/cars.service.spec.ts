@@ -5,6 +5,7 @@ describe('CarsService', () => {
     prisma?: {
       car?: {
         findFirst?: jest.Mock;
+        findMany?: jest.Mock;
         update?: jest.Mock;
       };
     };
@@ -21,6 +22,7 @@ describe('CarsService', () => {
     const prisma = {
       car: {
         findFirst: jest.fn().mockResolvedValue({ id: 'car_1', userId: 'user_1', currentMileage: 80000 }),
+        findMany: jest.fn().mockResolvedValue([{ id: 'car_1', photoUrl: 'https://stored-url' }]),
         update: jest.fn().mockResolvedValue({ id: 'car_1', photoUrl: 'https://stored-url' }),
       },
       ...overrides?.prisma,
@@ -56,6 +58,22 @@ describe('CarsService', () => {
     };
   }
 
+  it('returns photoUrl in car list responses', async () => {
+    const { service, prisma } = makeService();
+
+    const response = await service.findAll('user_1');
+
+    expect(prisma.car.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'user_1' },
+        select: expect.objectContaining({
+          photoUrl: true,
+        }),
+      }),
+    );
+    expect(response.data[0]).toEqual(expect.objectContaining({ photoUrl: 'https://stored-url' }));
+  });
+
   it('uploads a photoFile to Supabase before saving the car', async () => {
     const { service, prisma, uploadsService } = makeService();
 
@@ -80,12 +98,17 @@ describe('CarsService', () => {
         size: 1024,
       }),
     );
-    expect(prisma.car.update).toHaveBeenCalledWith({
-      where: { id: 'car_1' },
-      data: expect.objectContaining({
-        photoUrl: 'https://example.supabase.co/storage/v1/object/public/maintaincar-uploads/cars/user_1/photo.jpg',
+    expect(prisma.car.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'car_1' },
+        data: expect.objectContaining({
+          photoUrl: 'https://example.supabase.co/storage/v1/object/public/maintaincar-uploads/cars/user_1/photo.jpg',
+        }),
+        select: expect.objectContaining({
+          photoUrl: true,
+        }),
       }),
-    });
+    );
   });
 
   it('updates mileage and other fields in the same patch request', async () => {
@@ -105,12 +128,17 @@ describe('CarsService', () => {
       }),
     );
     expect(maintenanceService.recalculateItemsForCar).toHaveBeenCalledWith('car_1');
-    expect(prisma.car.update).toHaveBeenCalledWith({
-      where: { id: 'car_1' },
-      data: expect.objectContaining({
-        brand: 'BMW',
-        currentMileage: 85000,
+    expect(prisma.car.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'car_1' },
+        data: expect.objectContaining({
+          brand: 'BMW',
+          currentMileage: 85000,
+        }),
+        select: expect.objectContaining({
+          photoUrl: true,
+        }),
       }),
-    });
+    );
   });
 });
