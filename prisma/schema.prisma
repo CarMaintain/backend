@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FuelType {
+  diesel
+  essence
+  hybrid
+  electric
+}
+
+enum Gearbox {
+  manual
+  automatic
+}
+
+enum VehicleDocumentType {
+  assurance
+  vignette
+  visite_technique
+  carte_grise
+}
+
+enum MaintenanceType {
+  vidange
+  oil_filter
+  air_filter
+  cabin_filter
+  fuel_filter
+  brakes
+  tires
+  battery
+  timing_belt
+  brake_fluid
+  coolant
+  clutch
+  flywheel
+}
+
+enum MaintenanceCategory {
+  scheduled
+  inspection
+  watchlist
+}
+
+enum MaintenanceStatus {
+  due
+  soon
+  ok
+  unknown
+  watch
+}
+
+enum MileageSource {
+  manual
+  maintenance_record
+  import
+}
+
+enum ReminderTargetType {
+  document
+  maintenance_item
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  fullName     String?
+  refreshTokens RefreshToken[]
+  cars         Car[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model Car {
+  id               String              @id @default(cuid())
+  userId           String
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand            String
+  model            String
+  year             Int?
+  currentMileage   Int                 @default(0)
+  fuelType         FuelType?
+  gearbox          Gearbox?
+  documents        VehicleDocument[]
+  maintenanceItems MaintenanceItem[]
+  maintenanceRecords MaintenanceRecord[]
+  mileageUpdates   MileageUpdate[]
+  reminderSettings ReminderSetting[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([userId])
+}
+
+model VehicleDocument {
+  id                 String              @id @default(cuid())
+  carId              String
+  car                Car                 @relation(fields: [carId], references: [id], onDelete: Cascade)
+  type               VehicleDocumentType
+  expiryDate         DateTime?
+  reminderDaysBefore Json                @default("[30,7,1]")
+  photoUrl           String?
+  notes              String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@unique([carId, type])
+  @@index([carId])
+}
+
+model MaintenanceItem {
+  id                    String              @id @default(cuid())
+  carId                 String
+  car                   Car                 @relation(fields: [carId], references: [id], onDelete: Cascade)
+  type                  MaintenanceType
+  category              MaintenanceCategory
+  label                 String
+  description           String?
+  defaultIntervalKm     Int?
+  defaultIntervalMonths Int?
+  lastDoneMileage       Int?
+  lastDoneDate          DateTime?
+  nextDueMileage        Int?
+  nextDueDate           DateTime?
+  status                MaintenanceStatus   @default(unknown)
+  hasNeverBeenDone      Boolean             @default(true)
+  watchlistSymptoms     Json?
+  records               MaintenanceRecord[]
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@unique([carId, type])
+  @@index([carId])
+}
+
+model MaintenanceRecord {
+  id                 String           @id @default(cuid())
+  carId              String
+  car                Car              @relation(fields: [carId], references: [id], onDelete: Cascade)
+  maintenanceItemId  String?
+  maintenanceItem    MaintenanceItem? @relation(fields: [maintenanceItemId], references: [id], onDelete: SetNull)
+  serviceType        String
+  category           String?
+  date               DateTime
+  mileage            Int?
+  priceMad           Decimal?         @db.Decimal(10, 2)
+  garageName         String?
+  receiptPhotoUrl    String?
+  notes              String?
+  checklist          Json             @default("{}")
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([carId])
+  @@index([maintenanceItemId])
+}
+
+model MileageUpdate {
+  id        String        @id @default(cuid())
+  carId     String
+  car       Car           @relation(fields: [carId], references: [id], onDelete: Cascade)
+  mileage   Int
+  date      DateTime
+  source    MileageSource?
+  createdAt DateTime      @default(now())
+
+  @@index([carId])
+}
+
+model ReminderSetting {
+  id          String             @id @default(cuid())
+  carId       String
+  car         Car                @relation(fields: [carId], references: [id], onDelete: Cascade)
+  targetType  ReminderTargetType
+  targetId    String
+  daysBefore  Json               @default("[30,7,1]")
+  enabled     Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([carId])
+  @@index([targetType, targetId])
+}
